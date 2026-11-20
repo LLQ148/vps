@@ -16,7 +16,7 @@
 
 # 改成你自己 GitHub 仓库里这个文件的 Raw 地址（用于“更新本脚本”）
 SCRIPT_URL="https://raw.githubusercontent.com/LLQ148/vps/main/lu.sh"
-VERSION="1.0.0"
+VERSION="1.0.1"
 
 LU_DIR=/etc/lu
 STATE=$LU_DIR/state
@@ -563,10 +563,13 @@ install_hy2() {
   command -v hysteria >/dev/null 2>&1 || die "Hysteria2 安装失败。"
 
   mkdir -p "$HY2_DIR"
-  if [ ! -s "$HY2_DIR/server.crt" ] || [ ! -s "$HY2_DIR/server.key" ]; then
+  # 证书必须带 subjectAltName，否则 sing-box 等客户端固定证书时会校验失败
+  if [ ! -s "$HY2_DIR/server.crt" ] || [ ! -s "$HY2_DIR/server.key" ] \
+     || ! openssl x509 -noout -ext subjectAltName -in "$HY2_DIR/server.crt" 2>/dev/null | grep -q "DNS:$sni"; then
     openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
-      -keyout "$HY2_DIR/server.key" -out "$HY2_DIR/server.crt" -subj "/CN=$sni" -days 3650 2>/dev/null
-    info "已生成自签证书（10 年）。"
+      -keyout "$HY2_DIR/server.key" -out "$HY2_DIR/server.crt" -subj "/CN=$sni" \
+      -addext "subjectAltName=DNS:$sni" -days 3650 2>/dev/null
+    info "已生成自签证书（10 年，含 subjectAltName）。客户端如果固定过旧证书，需要重新获取。"
   fi
   # 密码只用十六进制，避免 / + = 等符号让链接导入失败
   if ! printf '%s' "$(state_get HY2_PASS)" | grep -Eq '^[0-9a-f]{16,}$'; then
